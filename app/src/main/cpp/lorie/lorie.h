@@ -215,6 +215,22 @@ struct lorie_shared_server_state {
         // Signals to renderer to update cursor's texture or its coordinates
         volatile uint8_t updated, moved;
     } cursor;
+
+    /*
+     * Multi-monitor: geometry of the "Virtual-1" RandR output, which lives in the X server
+     * process (see pvfb->outputs[] in InitOutput.c). The renderer process has no other way to
+     * find out where Virtual-1 is or how big it is, so the X server writes this every time it
+     * (re)configures that output's CRTC (lorieRRCrtcSet), and the renderer's network streaming
+     * code (added alongside this field) reads it to know what region to capture and stream to
+     * the second device. Plain fields, not behind a mutex: each one is written from a single
+     * place, torn reads just mean the streaming thread uses slightly stale geometry for one
+     * frame, which is harmless.
+     */
+    struct {
+        volatile uint8_t enabled; // output is RR_Connected and part of the desktop bounding box
+        volatile int16_t x, y;
+        volatile uint16_t width, height;
+    } virtualMonitor;
 };
 
 static int android_to_linux_keycode[304] = {

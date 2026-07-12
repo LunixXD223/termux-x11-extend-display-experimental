@@ -65,6 +65,7 @@ static ExaDriverRec lorieExa;
 // are created disconnected and only become part of the desktop when explicitly enabled
 // (see lorieRRCrtcSet / RRScreenSizeSet handling added in later patches).
 #define LORIE_MAX_OUTPUTS 2
+enum { LORIE_OUTPUT_BUILTIN = 0, LORIE_OUTPUT_VIRTUAL1 = 1 };
 
 typedef struct {
     RRCrtcPtr crtc;
@@ -639,6 +640,17 @@ static Bool lorieRRCrtcSet(ScreenPtr pScreen, RRCrtcPtr crtc, RRModePtr mode, in
         pvfb->outputs[i].y = y;
         pvfb->outputs[i].width = mode->mode.width;
         pvfb->outputs[i].height = mode->mode.height;
+
+        // Publish Virtual-1's geometry to the renderer process (separate process, only
+        // reachable through pvfb->state) so its network streaming code knows what region of
+        // the root framebuffer to capture. Index 1 is always Virtual-1 - see lorieRandRInit.
+        if (i == LORIE_OUTPUT_VIRTUAL1 && pvfb->state) {
+            pvfb->state->virtualMonitor.x = (int16_t) x;
+            pvfb->state->virtualMonitor.y = (int16_t) y;
+            pvfb->state->virtualMonitor.width = (uint16_t) mode->mode.width;
+            pvfb->state->virtualMonitor.height = (uint16_t) mode->mode.height;
+            pvfb->state->virtualMonitor.enabled = TRUE;
+        }
         break;
     }
 
@@ -726,7 +738,7 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
         return FALSE;
 
     pvfb->output_count = 1;
-    if (!lorieCreateOutput(pScreen, 0, pvfb->root.name, sizeof(pvfb->root.name), mode))
+    if (!lorieCreateOutput(pScreen, LORIE_OUTPUT_BUILTIN, pvfb->root.name, sizeof(pvfb->root.name), mode))
         return FALSE;
 
     // Virtual-1: extra output for a second, network-attached monitor. Created disconnected -
@@ -734,7 +746,7 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
     // --output Virtual-1 --pos ...). Passing mode == NULL here means lorieCreateOutput takes
     // the "disconnected" branch and does not touch pScreen geometry at all.
     pvfb->output_count = 2;
-    if (!lorieCreateOutput(pScreen, 1, "Virtual-1", strlen("Virtual-1"), NULL))
+    if (!lorieCreateOutput(pScreen, LORIE_OUTPUT_VIRTUAL1, "Virtual-1", strlen("Virtual-1"), NULL))
         return FALSE;
 
     // Give Virtual-1 a small set of common modes up front so it already has something to
@@ -750,7 +762,7 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
             if (!modes[i])
                 return FALSE;
         }
-        if (!RROutputSetModes(pvfb->outputs[1].output, modes, ARRAY_SIZE(virtualModes), 0))
+        if (!RROutputSetModes(pvfb->outputs[LORIE_OUTPUT_VIRTUAL1].output, modes, ARRAY_SIZE(virtualModes), 0))
             return FALSE;
     }
 
