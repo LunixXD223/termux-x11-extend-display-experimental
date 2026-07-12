@@ -688,6 +688,31 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
     if (!lorieCreateOutput(pScreen, 0, pvfb->root.name, sizeof(pvfb->root.name), mode))
         return FALSE;
 
+    // Virtual-1: extra output for a second, network-attached monitor. Created disconnected -
+    // it is not part of the desktop until a later patch enables it (RRSetCrtcConfig / xrandr
+    // --output Virtual-1 --pos ...). Passing mode == NULL here means lorieCreateOutput takes
+    // the "disconnected" branch and does not touch pScreen geometry at all.
+    pvfb->output_count = 2;
+    if (!lorieCreateOutput(pScreen, 1, "Virtual-1", strlen("Virtual-1"), NULL))
+        return FALSE;
+
+    // Give Virtual-1 a small set of common modes up front so it already has something to
+    // offer once it gets connected later - xrandr can list them even while disconnected.
+    {
+        static const struct { int w, h; } virtualModes[] = {
+            { 1280, 720 }, { 1920, 1080 },
+        };
+        RRModePtr modes[ARRAY_SIZE(virtualModes)];
+        int i;
+        for (i = 0; i < ARRAY_SIZE(virtualModes); i++) {
+            modes[i] = lorieCvt(virtualModes[i].w, virtualModes[i].h, pvfb->root.framerate);
+            if (!modes[i])
+                return FALSE;
+        }
+        if (!RROutputSetModes(pvfb->outputs[1].output, modes, ARRAY_SIZE(virtualModes), 0))
+            return FALSE;
+    }
+
     return TRUE;
 }
 
