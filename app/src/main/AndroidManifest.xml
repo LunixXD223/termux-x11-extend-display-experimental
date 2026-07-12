@@ -48,6 +48,12 @@
                 <action android:name="android.intent.action.MAIN" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MonitorActivity"
+            android:taskAffinity=".MonitorActivity"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden"
+            android:exported="false" />
 	    <meta-data android:name="com.samsung.android.multidisplay.keep_process_alive" android:value="false"/>
 	    <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />
 
