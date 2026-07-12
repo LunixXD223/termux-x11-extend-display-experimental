@@ -59,6 +59,21 @@ static struct present_screen_info loriePresentInfo;
 static dri3_screen_info_rec lorieDri3Info;
 static ExaDriverRec lorieExa;
 
+// Multi-monitor: one RandR CRTC+Output pair. `LORIE_MAX_OUTPUTS` bounds how many of these
+// we ever create; `output_count` in lorieScreenInfo tracks how many are actually in use.
+// Only `builtin` (index 0) is connected by default - additional outputs (e.g. "Virtual-1")
+// are created disconnected and only become part of the desktop when explicitly enabled
+// (see lorieRRCrtcSet / RRScreenSizeSet handling added in later patches).
+#define LORIE_MAX_OUTPUTS 2
+
+typedef struct {
+    RRCrtcPtr crtc;
+    RROutputPtr output;
+    Bool connected;
+    int16_t x, y;
+    uint16_t width, height;
+} lorieOutput;
+
 typedef struct {
     DamagePtr damage;
     OsTimerPtr fpsTimer;
@@ -81,6 +96,11 @@ typedef struct {
     uint64_t vblank_interval;
     struct xorg_list vblank_queue;
     uint64_t current_msc;
+
+    // Multi-monitor RandR state. outputs[0] is always the original "builtin" output;
+    // it keeps existing single-monitor behaviour exactly as before this patch.
+    lorieOutput outputs[LORIE_MAX_OUTPUTS];
+    int output_count;
 } lorieScreenInfo;
 
 ScreenPtr pScreenPtr;
@@ -604,10 +624,51 @@ static Bool lorieRRGetInfo(unused ScreenPtr pScreen, Rotation *rotations) {
     return TRUE;
 }
 
+// Creates the CRTC+Output pair for pvfb->outputs[idx] and, if `mode` is non-NULL, wires it up
+// as connected at (0, 0) with that mode - this is exactly what the old single-output
+// lorieRandRInit used to do inline. Passing `mode == NULL` creates the output disconnected
+// with no modes set, for outputs that will be enabled later (added in Patch 2).
+static Bool lorieCreateOutput(ScreenPtr pScreen, int idx, const char *name, size_t name_size, RRModePtr mode) {
+    lorieOutput *o = &pvfb->outputs[idx];
+
+    if (!(o->crtc = RRCrtcCreate(pScreen, NULL)))
+        return FALSE;
+    if (!RRCrtcGammaSetSize(o->crtc, 256))
+        return FALSE;
+    if (!(o->output = RROutputCreate(pScreen, name, name_size, NULL)))
+        return FALSE;
+    o->output->nameLength = strlen(o->output->name);
+    if (!RROutputSetClones(o->output, NULL, 0))
+        return FALSE;
+    if (!RROutputSetCrtcs(o->output, &o->crtc, 1))
+        return FALSE;
+
+    if (!mode) {
+        // Disconnected output: no mode, no CRTC notify. xrandr will show it as
+        // "disconnected" with an empty mode list until a later patch enables it.
+        if (!RROutputSetConnection(o->output, RR_Disconnected))
+            return FALSE;
+        o->connected = FALSE;
+        return TRUE;
+    }
+
+    if (!RROutputSetModes(o->output, &mode, 1, 0))
+        return FALSE;
+    if (!RROutputSetConnection(o->output, RR_Connected))
+        return FALSE;
+    if (!RRCrtcNotify(o->crtc, mode, 0, 0, RR_Rotate_0, NULL, 1, &o->output))
+        return FALSE;
+
+    o->connected = TRUE;
+    o->x = 0;
+    o->y = 0;
+    o->width = mode->mode.width;
+    o->height = mode->mode.height;
+    return TRUE;
+}
+
 static Bool lorieRandRInit(ScreenPtr pScreen) {
     rrScrPrivPtr pScrPriv;
-    RROutputPtr output;
-    RRCrtcPtr crtc;
     RRModePtr mode;
 
     if (!RRScreenInit(pScreen))
@@ -620,18 +681,13 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
 
     RRScreenSetSizeRange(pScreen, 1, 1, 32767, 32767);
 
-    if (FALSE
-        || !(mode = lorieCvt(pScreen->width, pScreen->height, pvfb->root.framerate))
-        || !(crtc = RRCrtcCreate(pScreen, NULL))
-        || !RRCrtcGammaSetSize(crtc, 256)
-        || !(output = RROutputCreate(pScreen, pvfb->root.name, sizeof(pvfb->root.name), NULL))
-        || (output->nameLength = strlen(output->name), FalseNoop())
-        || !RROutputSetClones(output, NULL, 0)
-        || !RROutputSetModes(output, &mode, 1, 0)
-        || !RROutputSetCrtcs(output, &crtc, 1)
-        || !RROutputSetConnection(output, RR_Connected)
-        || !RRCrtcNotify(crtc, mode, 0, 0, RR_Rotate_0, NULL, 1, &output))
+    if (!(mode = lorieCvt(pScreen->width, pScreen->height, pvfb->root.framerate)))
         return FALSE;
+
+    pvfb->output_count = 1;
+    if (!lorieCreateOutput(pScreen, 0, pvfb->root.name, sizeof(pvfb->root.name), mode))
+        return FALSE;
+
     return TRUE;
 }
 
