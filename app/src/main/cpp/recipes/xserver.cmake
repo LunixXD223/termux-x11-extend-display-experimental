@@ -280,6 +280,7 @@ add_library(Xlorie SHARED
         "lorie/InitInput.c"
         "lorie/InputXKB.c"
         "lorie/renderer.c"
+        "lorie/netmonitor.c"
         "lorie/buffer.c"
         "lorie/activity.c")
 target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include")

@@ -320,6 +320,8 @@ void rendererInit(JNIEnv* env) {
     pthread_cond_init(&stateChangeFinishCond, NULL);
     pthread_spin_init(&bufferLock, false);
 
+    netMonitorInit();
+
     pthread_create(&t, NULL, (void*(*)(void*)) rendererInitThread, vm);
 }
 
@@ -746,6 +748,14 @@ void rendererRedrawLocked(bool* waitingForBuffers) {
     state->cursor.moved = FALSE;
     drawCursor(sourceWidth, sourceHeight, sourceLeft, sourceTop);
     glFlush();
+
+    // Multi-monitor: capture Virtual-1's region (if enabled) while we still hold state->lock,
+    // so it reads the exact same consistent frame the primary display just drew instead of
+    // racing the X server's next write. This does extend how long the X server is blocked per
+    // frame when a second monitor is active - worth revisiting (e.g. throttling this to a
+    // lower rate than the primary display, or moving it out from under the lock with its own
+    // double-buffering) once the rest of the pipeline is proven to work.
+    netMonitorOfferFrame((struct lorie_shared_server_state *) state);
 
     // Wait until root window drawing is finished before giving control back to X server
     eglClientWaitSyncKHR(egl_display, fence, 0, EGL_FOREVER);

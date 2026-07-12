@@ -54,6 +54,13 @@ __unused void rendererRemoveAllBuffers(void);
 // network transport that calls this per output).
 __unused bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA);
 
+// Multi-monitor networking (netmonitor.c): streams Virtual-1's region of the desktop to a
+// second device over TCP as H.264. netMonitorInit() starts the (single) accept thread, safe to
+// call more than once. netMonitorOfferFrame() must be called from the renderer thread once per
+// redraw - see the definition in netmonitor.c for the full design writeup.
+void netMonitorInit(void);
+void netMonitorOfferFrame(struct lorie_shared_server_state *state);
+
 static inline __always_inline void lorie_mutex_lock(pthread_mutex_t* mutex, pid_t* lockingPid) {
     // Unfortunately there is no robust mutexes in bionic.
     // Posix does not define any valid way to unlock stuck non-robust mutex
