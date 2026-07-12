@@ -769,6 +769,107 @@ void rendererRedrawLocked(bool* waitingForBuffers) {
     state->renderedFrames++;
 }
 
+// --- Multi-monitor -----------------------------------------------------------------------
+// Captures an arbitrary sub-rect of the root framebuffer (in desktop/root-window coordinates,
+// same space as expectedW/expectedH) into a caller-supplied RGBA8 buffer, which must be at
+// least w*h*4 bytes. This is how the Virtual-1 output's region of the desktop gets pulled out
+// so it can eventually be sent to a second, network-attached device.
+//
+// Nothing calls this yet - the network transport that will (Patch 5) doesn't exist yet. It's
+// added now, on its own, so it can be tested in isolation (e.g. dumping a capture to a file)
+// before any networking code depends on it.
+//
+// Must be called on the renderer thread with the renderer's EGL context current - same
+// constraint as rendererRedrawLocked, since it shares the same GL context and object
+// namespace. Returns false (not fatal) if the root buffer isn't available yet or the
+// requested region doesn't fit inside the current desktop size.
+bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
+    static GLuint captureFbo = 0, captureTex = 0;
+    static int captureTexW = 0, captureTexH = 0;
+    LorieBuffer *buffer;
+    LorieBuffer_Desc *desc;
+    GLint prevFbo = 0, prevViewport[4];
+    float xfactor = 1.f, u0, v0, u1, v1;
+
+    if (!state || w <= 0 || h <= 0 || !outRGBA)
+        return false;
+
+    pthread_spin_lock(&bufferLock);
+    buffer = LorieBufferList_findById(&buffers, state->rootWindowTextureID);
+    if (!buffer)
+        buffer = LorieBufferList_findById(&removedBuffers, state->rootWindowTextureID);
+    pthread_spin_unlock(&bufferLock);
+
+    if (!buffer) {
+        log("rendererCaptureRegion: root buffer not available yet");
+        return false;
+    }
+
+    if (x < 0 || y < 0 || x + w > expectedW || y + h > expectedH) {
+        log("rendererCaptureRegion: region %d,%d %dx%d outside of desktop %dx%d", x, y, w, h, expectedW, expectedH);
+        return false;
+    }
+
+    desc = LorieBuffer_description(buffer);
+    if (desc->type == LORIEBUFFER_FD)
+        xfactor = (float) desc->width / (float) desc->stride;
+
+    // (Re)create the offscreen FBO/texture when the requested capture size changes. In
+    // practice this only happens once, right after Virtual-1's mode is set.
+    if (captureTexW != w || captureTexH != h) {
+        if (captureFbo) {
+            glDeleteFramebuffers(1, &captureFbo);
+            glDeleteTextures(1, &captureTex);
+            captureFbo = captureTex = 0;
+            captureTexW = captureTexH = 0;
+        }
+
+        glGenTextures(1, &captureTex); checkGlError();
+        bindTexture(captureTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL); checkGlError();
+
+        glGenFramebuffers(1, &captureFbo); checkGlError();
+        glBindFramebuffer(GL_FRAMEBUFFER, captureFbo); checkGlError();
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, captureTex, 0); checkGlError();
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            loge("rendererCaptureRegion: capture FBO incomplete");
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDeleteFramebuffers(1, &captureFbo);
+            glDeleteTextures(1, &captureTex);
+            captureFbo = captureTex = 0;
+            return false;
+        }
+
+        captureTexW = w;
+        captureTexH = h;
+    }
+
+    // Save and restore FBO/viewport so this never disturbs whatever rendererRedrawLocked was
+    // about to do on the same thread right before or after this call.
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, captureFbo); checkGlError();
+    glViewport(0, 0, w, h);
+
+    u0 = (float) x / (float) desc->width * xfactor;
+    v0 = (float) y / (float) desc->height;
+    u1 = (float) (x + w) / (float) desc->width * xfactor;
+    v1 = (float) (y + h) / (float) desc->height;
+
+    LorieBuffer_bindTexture(buffer);
+    drawRegion(0, -1.f, -1.f, 1.f, 1.f, u0, v0, u1, v1, LorieBuffer_isRgba(buffer));
+    glFinish();
+
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, outRGBA); checkGlError();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint) prevFbo);
+    glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+
+    return true;
+}
+
 static inline __always_inline bool rendererShouldWait(bool *waitingForBuffers) {
     static uint64_t lastRequestedBufferId = 0;
     bool buffersChanged;

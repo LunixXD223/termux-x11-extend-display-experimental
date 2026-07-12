@@ -48,6 +48,11 @@ __unused void rendererSetSharedState(struct lorie_shared_server_state* newState)
 __unused void rendererAddBuffer(LorieBuffer* buf);
 __unused void rendererRemoveBuffer(uint64_t id);
 __unused void rendererRemoveAllBuffers(void);
+// Multi-monitor: captures a sub-rect of the root framebuffer (root-window coordinates) into
+// outRGBA (caller-allocated, >= w*h*4 bytes). Must be called on the renderer thread. See the
+// definition in renderer.c for details; not wired up to anything yet (Patch 5 will add the
+// network transport that calls this per output).
+__unused bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA);
 
 static inline __always_inline void lorie_mutex_lock(pthread_mutex_t* mutex, pid_t* lockingPid) {
     // Unfortunately there is no robust mutexes in bionic.
