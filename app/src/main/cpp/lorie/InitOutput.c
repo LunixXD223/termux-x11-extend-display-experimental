@@ -614,9 +614,50 @@ static Bool lorieRRScreenSetSize(ScreenPtr pScreen, CARD16 width, CARD16 height,
     return TRUE;
 }
 
-static Bool lorieRRCrtcSet(unused ScreenPtr pScreen, RRCrtcPtr crtc, RRModePtr mode, int x, int y,
+// NOTE: mode == NULL (disabling a CRTC) already returned FALSE before this patch and still
+// does - lorie has never supported turning a CRTC off through this path. That limitation is
+// unrelated to multi-monitor support and is left untouched here.
+static Bool lorieRRCrtcSet(ScreenPtr pScreen, RRCrtcPtr crtc, RRModePtr mode, int x, int y,
                Rotation rotation, int numOutput, RROutputPtr *outputs) {
-    return (crtc && mode) ? RRCrtcNotify(crtc, mode, x, y, rotation, NULL, numOutput, outputs) : FALSE;
+    int i;
+    int maxWidth = 0, maxHeight = 0;
+
+    if (!crtc || !mode)
+        return FALSE;
+
+    if (!RRCrtcNotify(crtc, mode, x, y, rotation, NULL, numOutput, outputs))
+        return FALSE;
+
+    // RandR core (rrcrtc.c) does not compute the total desktop bounding box for us - lorie
+    // does not use the xf86Crtc helper layer that would normally do that. So we track each
+    // output's geometry ourselves and recompute the union every time a CRTC is (re)configured.
+    for (i = 0; i < pvfb->output_count; i++) {
+        if (pvfb->outputs[i].crtc != crtc)
+            continue;
+        pvfb->outputs[i].connected = TRUE;
+        pvfb->outputs[i].x = x;
+        pvfb->outputs[i].y = y;
+        pvfb->outputs[i].width = mode->mode.width;
+        pvfb->outputs[i].height = mode->mode.height;
+        break;
+    }
+
+    for (i = 0; i < pvfb->output_count; i++) {
+        if (!pvfb->outputs[i].connected)
+            continue;
+        maxWidth = max(maxWidth, pvfb->outputs[i].x + pvfb->outputs[i].width);
+        maxHeight = max(maxHeight, pvfb->outputs[i].y + pvfb->outputs[i].height);
+    }
+
+    if (maxWidth > 0 && maxHeight > 0 && (maxWidth != pScreen->width || maxHeight != pScreen->height)) {
+        CARD32 mmWidth = ((double) maxWidth) * 25.4 / monitorResolution;
+        CARD32 mmHeight = ((double) maxHeight) * 25.4 / monitorResolution;
+        // Triggers pScrPriv->rrScreenSetSize (lorieRRScreenSetSize below), which reallocates
+        // the root pixmap to the new bounding box and copies the previous contents over.
+        RRScreenSizeSet(pScreen, maxWidth, maxHeight, mmWidth, mmHeight);
+    }
+
+    return TRUE;
 }
 
 static Bool lorieRRGetInfo(unused ScreenPtr pScreen, Rotation *rotations) {
