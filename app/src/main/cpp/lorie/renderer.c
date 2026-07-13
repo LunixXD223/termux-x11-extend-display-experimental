@@ -824,6 +824,18 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
     if (desc->type == LORIEBUFFER_FD)
         xfactor = (float) desc->width / (float) desc->stride;
 
+    // Save the FBO/viewport that were current *before* anything in this function touches GL
+    // state, so we can restore them at the end - this must happen before the (re)creation
+    // block below, which itself calls glBindFramebuffer() while setting up the capture FBO's
+    // texture attachment. Capturing prevFbo after that point was a real bug: it would read
+    // back captureFbo itself as "previous", so the restore at the end left the GL context
+    // permanently pointed at the offscreen capture FBO instead of the real on-screen surface -
+    // silently breaking the primary on-screen rendering for every frame after the first
+    // capture, since rendererRedrawLocked's normal draw path never explicitly re-binds FBO 0
+    // and relies on it already being current.
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+
     // (Re)create the offscreen FBO/texture when the requested capture size changes. In
     // practice this only happens once, right after Virtual-1's mode is set.
     if (captureTexW != w || captureTexH != h) {
@@ -844,7 +856,7 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
 
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             loge("rendererCaptureRegion: capture FBO incomplete");
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, (GLuint) prevFbo);
             glDeleteFramebuffers(1, &captureFbo);
             glDeleteTextures(1, &captureTex);
             captureFbo = captureTex = 0;
@@ -854,11 +866,6 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
         captureTexW = w;
         captureTexH = h;
     }
-
-    // Save and restore FBO/viewport so this never disturbs whatever rendererRedrawLocked was
-    // about to do on the same thread right before or after this call.
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
-    glGetIntegerv(GL_VIEWPORT, prevViewport);
 
     glBindFramebuffer(GL_FRAMEBUFFER, captureFbo); checkGlError();
     glViewport(0, 0, w, h);
