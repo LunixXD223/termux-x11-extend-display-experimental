@@ -641,9 +641,21 @@ void rendererRedrawLocked(bool* waitingForBuffers) {
 
     int alignedExpectedW = expectedW - (expectedW % CVT_H_GRANULARITY);
 
-    if (!expectedW || !expectedH || desc->height != expectedH ||
-        (desc->width != alignedExpectedW && desc->width != expectedW)) {
-        log("Buffer %llu is not of expected size, expecting %dx%d or %dx%d, got %dx%d",
+    // BUGFIX (multi-monitor): this used to require desc->width/height to match expectedW/H
+    // *exactly*. expectedW/H come from rendererSetViewport(), driven by Java's
+    // LorieView.updateViewport() - purely this device's own local screen size/preferences,
+    // with no awareness of Virtual-1 or the shared desktop's total RandR size. Once Virtual-1
+    // is enabled, the root buffer legitimately grows wider than any single device's own
+    // expected size (Patch 3) - each device only ever draws its own sourceLeft/sourceTop/
+    // sourceWidth/sourceHeight sub-region of it (computed further below), so the buffer only
+    // needs to be *at least* as big as this device's own area, not an exact match anymore.
+    // Before this fix, that exact-match requirement made this function return before ever
+    // reaching netMonitorOfferFrame() (and before the primary on-screen draw itself) the
+    // instant Virtual-1 grew the buffer past this device's own size - breaking both the local
+    // display and the second-monitor stream at once.
+    if (!expectedW || !expectedH || desc->height < expectedH ||
+        (desc->width < alignedExpectedW && desc->width < expectedW)) {
+        log("Buffer %llu is smaller than expected, expecting at least %dx%d or %dx%d, got %dx%d",
             state->rootWindowTextureID, alignedExpectedW, expectedH, expectedW, expectedH,
             desc->width, desc->height);
         return;
