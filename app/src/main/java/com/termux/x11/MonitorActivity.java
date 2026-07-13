@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -23,10 +24,6 @@ import java.util.zip.Inflater;
  * Termux:X11 (see lorie/netmonitor.c on the native side) and displays its Virtual-1 output -
  * received as raw RGBA8888 tiles over TCP - full-screen, by maintaining a persistent Bitmap of
  * the whole desktop and blitting incoming dirty tiles into it.
- *
- * This replaces an earlier H.264/MediaCodec-based version. Since this stream only ever travels
- * over a local network, raw + dirty-rect + zlib trades a bit of bandwidth for much lower
- * latency and far simpler, more debuggable code than a video codec pipeline.
  *
  * This is a viewer only: it does not send input back to the host yet (touch/mouse/keyboard
  * routing back to the X server, with the correct coordinate offset, is a separate feature - see
@@ -47,13 +44,25 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     private static final int KIND_DIRTY_RECT = 1;
 
     private SurfaceView surfaceView;
+    private View centerPanel;
+    private View topBar;
     private EditText hostInput;
     private Button connectButton;
+    private Button disconnectButton;
     private TextView statusText;
+    private TextView statusTextCenter;
+    private TextView portText;
 
     private volatile boolean surfaceReady = false;
     private volatile boolean running = false;
-    private Thread receiverThread;
+    private volatile Thread receiverThread;
+
+    // Guards access to currentSocket, which Disconnect (running on the UI thread) closes to
+    // unblock the receiver thread's blocking read - Thread.interrupt() does NOT interrupt a
+    // blocked java.net.Socket read, closing the socket from another thread is the standard way
+    // to cancel one.
+    private final Object socketLock = new Object();
+    private Socket currentSocket;
 
     // Only ever touched from the receiver thread (created/replaced on KIND_CONFIG, read/written
     // in applyDirtyRect/drawFrame - both called from the same thread).
@@ -65,25 +74,35 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         setContentView(R.layout.monitor_activity);
 
         surfaceView = findViewById(R.id.monitor_surface);
+        centerPanel = findViewById(R.id.monitor_center_panel);
+        topBar = findViewById(R.id.monitor_top_bar);
         hostInput = findViewById(R.id.monitor_host_input);
         connectButton = findViewById(R.id.monitor_connect_button);
+        disconnectButton = findViewById(R.id.monitor_disconnect_button);
         statusText = findViewById(R.id.monitor_status_text);
+        statusTextCenter = findViewById(R.id.monitor_status_text_center);
+        portText = findViewById(R.id.monitor_port_text);
+
+        portText.setText(getString(R.string.monitor_port_label, MONITOR_PORT));
 
         surfaceView.getHolder().addCallback(this);
         connectButton.setOnClickListener(v -> {
             String host = hostInput.getText().toString().trim();
             if (host.isEmpty()) {
-                statusText.setText(R.string.monitor_status_enter_host);
+                setStatus(getString(R.string.monitor_status_enter_host));
                 return;
             }
             start(host);
         });
+        disconnectButton.setOnClickListener(v -> disconnect());
+
+        showDisconnectedUi();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        stop();
+        disconnect();
     }
 
     @Override
@@ -100,34 +119,94 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         surfaceReady = false;
-        stop();
+        disconnect();
     }
 
     private void start(String host) {
-        stop(); // in case a previous connection/thread is still winding down
+        disconnect(); // in case a previous connection is still around
 
         running = true;
-        statusText.setText(R.string.monitor_status_connecting);
+        runOnUiThread(this::showConnectingUi);
         receiverThread = new Thread(() -> runReceiver(host), "monitor-receiver");
         receiverThread.start();
     }
 
-    private void stop() {
+    /**
+     * Tears the connection down completely: closes the socket (unblocking the receiver thread's
+     * read), stops the receiver thread, releases the frame bitmap, and puts the UI back into
+     * the disconnected state. Safe to call multiple times / when nothing is connected.
+     */
+    private void disconnect() {
         running = false;
-        if (receiverThread != null) {
-            receiverThread.interrupt();
-            receiverThread = null;
+
+        synchronized (socketLock) {
+            if (currentSocket != null) {
+                try {
+                    currentSocket.close();
+                } catch (IOException e) {
+                    Log.w(TAG, "Error closing monitor socket", e);
+                }
+                currentSocket = null;
+            }
         }
+
+        Thread t = receiverThread;
+        receiverThread = null;
+        if (t != null) {
+            // Reap the thread off to the side instead of joining here directly - disconnect()
+            // is often called from the UI thread (Disconnect button click), and blocking it on
+            // join() would risk a visible hitch/ANR. The join is just cleanup hygiene at this
+            // point (the socket close above already unblocked whatever read it was doing).
+            Thread reaper = t;
+            new Thread(() -> {
+                try {
+                    reaper.join(2000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "monitor-receiver-reaper").start();
+        }
+
+        frameBitmap = null;
+        runOnUiThread(this::showDisconnectedUi);
+    }
+
+    private void showDisconnectedUi() {
+        centerPanel.setVisibility(View.VISIBLE);
+        topBar.setVisibility(View.GONE);
+        statusTextCenter.setText(R.string.monitor_status_disconnected);
+    }
+
+    private void showConnectingUi() {
+        centerPanel.setVisibility(View.VISIBLE);
+        topBar.setVisibility(View.GONE);
+        statusTextCenter.setText(R.string.monitor_status_connecting);
+    }
+
+    private void showConnectedUi() {
+        centerPanel.setVisibility(View.GONE);
+        topBar.setVisibility(View.VISIBLE);
     }
 
     private void setStatus(String text) {
-        runOnUiThread(() -> statusText.setText(text));
+        runOnUiThread(() -> {
+            statusText.setText(text);
+            statusTextCenter.setText(text);
+        });
     }
 
     private void runReceiver(String host) {
         try (Socket socket = new Socket()) {
+            synchronized (socketLock) {
+                if (!running) {
+                    return; // disconnect() already ran before this thread even got going
+                }
+                currentSocket = socket;
+            }
+
             socket.connect(new InetSocketAddress(host, MONITOR_PORT), 5000);
             setStatus(getString(R.string.monitor_status_connected));
+            runOnUiThread(this::showConnectedUi);
 
             DataInputStream in = new DataInputStream(socket.getInputStream());
             Inflater inflater = new Inflater();
@@ -162,8 +241,28 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                 }
             }
         } catch (IOException e) {
-            Log.e(TAG, "Monitor connection error", e);
-            setStatus(getString(R.string.monitor_status_error, e.getMessage()));
+            // A close() triggered by disconnect() also lands here (as a "Socket closed"
+            // IOException) - that's expected and not a real error in that case. The identity
+            // check also guards against a stale (already-superseded) thread reporting an error
+            // for a connection the user has since replaced with a new one.
+            if (running && Thread.currentThread() == receiverThread) {
+                Log.e(TAG, "Monitor connection error", e);
+                setStatus(getString(R.string.monitor_status_error, e.getMessage()));
+            }
+        } finally {
+            synchronized (socketLock) {
+                currentSocket = null;
+            }
+            // Only reset to the disconnected UI if this thread is still the current one AND
+            // the connection wasn't already torn down via disconnect() (which already flips
+            // running to false itself). Without the identity check, a thread that just got
+            // superseded by a rapid reconnect could still be unwinding here *after* the new
+            // connection has already set running=true again, and would otherwise incorrectly
+            // flip the brand-new connection back to "disconnected".
+            if (running && Thread.currentThread() == receiverThread) {
+                running = false;
+                runOnUiThread(this::showDisconnectedUi);
+            }
         }
     }
 

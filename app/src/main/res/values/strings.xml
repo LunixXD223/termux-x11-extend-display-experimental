@@ -11,12 +11,16 @@
     <string name="help_button_text">   HELP   </string>
     <string name="exit_button_text">   EXIT   </string>
     <string name="monitor_button_text">   BECOME EXTRA MONITOR   </string>
+    <string name="monitor_title">Extra Monitor</string>
     <string name="monitor_host_hint">Host IP address</string>
+    <string name="monitor_port_label">Port %1$d</string>
     <string name="monitor_connect_button_text">Connect</string>
+    <string name="monitor_disconnect_button_text">Disconnect</string>
     <string name="monitor_status_enter_host">Enter the host device\'s IP address</string>
     <string name="monitor_status_connecting">Connecting…</string>
     <string name="monitor_status_connected">Connected, waiting for stream…</string>
     <string name="monitor_status_streaming">Streaming %1$d×%2$d</string>
+    <string name="monitor_status_disconnected">Disconnected</string>
     <string name="monitor_status_error">Connection error: %1$s</string>
     <string name="extra_keys_config_desc">Here you can set value of extra-keys variable like in Termux app (read <a href="http://wiki.termux.com/wiki/Touch_Keyboard#Extra_Keys_Row">this</a>) and more \n
 E.g. <b>META</b> for <i>META key</i>, \n

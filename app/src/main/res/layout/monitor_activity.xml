@@ -1,52 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000">
+    android:background="#000000"
+    android:fitsSystemWindows="false">
 
     <SurfaceView
         android:id="@+id/monitor_surface"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Top status bar - visible only while connected/streaming. -->
     <LinearLayout
-        android:id="@+id/monitor_controls"
+        android:id="@+id/monitor_top_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentTop="true"
-        android:orientation="vertical"
-        android:background="#88000000"
-        android:padding="12dp">
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#99000000"
+        android:paddingStart="20dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/monitor_status_text"
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:textColor="#FFFFFF"
+            android:textSize="15sp"
             android:text="@string/monitor_status_enter_host" />
 
-        <LinearLayout
+        <Button
+            android:id="@+id/monitor_disconnect_button"
+            style="?android:attr/buttonStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/monitor_disconnect_button_text" />
+    </LinearLayout>
+
+    <!-- Center panel - host/port entry, visible only while disconnected. -->
+    <LinearLayout
+        android:id="@+id/monitor_center_panel"
+        android:layout_width="300dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/monitor_title"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/monitor_status_text_center"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#AAAAAA"
+            android:textSize="14sp"
+            android:text="@string/monitor_status_enter_host" />
+
+        <EditText
+            android:id="@+id/monitor_host_input"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="24dp"
+            android:inputType="textUri"
+            android:singleLine="true"
+            android:hint="@string/monitor_host_hint"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777"
+            android:gravity="center" />
 
-            <EditText
-                android:id="@+id/monitor_host_input"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:inputType="textUri"
-                android:singleLine="true"
-                android:hint="@string/monitor_host_hint"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#AAAAAA" />
+        <TextView
+            android:id="@+id/monitor_port_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="#666666"
+            android:textSize="12sp" />
 
-            <Button
-                android:id="@+id/monitor_connect_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/monitor_connect_button_text" />
-        </LinearLayout>
+        <Button
+            android:id="@+id/monitor_connect_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/monitor_connect_button_text" />
     </LinearLayout>
-</RelativeLayout>
+</FrameLayout>
