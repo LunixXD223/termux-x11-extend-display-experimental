@@ -815,12 +815,19 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
         return false;
     }
 
-    if (x < 0 || y < 0 || x + w > expectedW || y + h > expectedH) {
-        log("rendererCaptureRegion: region %d,%d %dx%d outside of desktop %dx%d", x, y, w, h, expectedW, expectedH);
+    desc = LorieBuffer_description(buffer);
+
+    // BUGFIX (multi-monitor): this used to check against expectedW/expectedH - the HOST
+    // DEVICE'S OWN local screen size (see rendererSetViewport()/LorieView.updateViewport()),
+    // which has no awareness of Virtual-1 at all. Virtual-1's region sits to the right of (or
+    // below) builtin, so x+w/y+h are *always* larger than the host's own expectedW/expectedH by
+    // definition - this check was unconditionally rejecting every single capture attempt.
+    // The correct bound is the actual shared root buffer's size, which Patch 3 already grows to
+    // fit every connected output.
+    if (x < 0 || y < 0 || x + w > desc->width || y + h > desc->height) {
+        log("rendererCaptureRegion: region %d,%d %dx%d outside of root buffer %dx%d", x, y, w, h, desc->width, desc->height);
         return false;
     }
-
-    desc = LorieBuffer_description(buffer);
     if (desc->type == LORIEBUFFER_FD)
         xfactor = (float) desc->width / (float) desc->stride;
 
