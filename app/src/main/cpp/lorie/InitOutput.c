@@ -641,6 +641,11 @@ static Bool lorieRRCrtcSet(ScreenPtr pScreen, RRCrtcPtr crtc, RRModePtr mode, in
         pvfb->outputs[i].width = mode->mode.width;
         pvfb->outputs[i].height = mode->mode.height;
 
+        // BUGFIX: this call was missing entirely before - RRCrtcNotify() alone does not
+        // change RandR's reported connection state, so 'xrandr' kept showing this output as
+        // "disconnected" forever even after its CRTC had a real mode/position assigned.
+        RROutputSetConnection(pvfb->outputs[i].output, RR_Connected);
+
         // Publish Virtual-1's geometry to the renderer process (separate process, only
         // reachable through pvfb->state) so its network streaming code knows what region of
         // the root framebuffer to capture. Index 1 is always Virtual-1 - see lorieRandRInit.
@@ -851,7 +856,33 @@ void lorieConfigureNotify(int width, int height, int framerate, size_t name_size
         mmHeight = ((double) (mode->mode.width)) * 25.4 / monitorResolution;
         RROutputSetModes(output, &mode, 1, 0);
         RRCrtcNotify(RRFirstEnabledCrtc(pScreen), mode, 0, 0, RR_Rotate_0, NULL, 1, &output);
-        RRScreenSizeSet(pScreen, mode->mode.width, mode->mode.height, mmWidth, mmHeight);
+
+        // BUGFIX: this resizes the "builtin" output directly, bypassing lorieRRCrtcSet - so
+        // without this, pvfb->outputs[LORIE_OUTPUT_BUILTIN]'s tracked width/height goes stale
+        // the moment the local display resizes (e.g. keyboard/inset changes), and a later
+        // Virtual-1 xrandr command would then compute the desktop bounding box using this
+        // stale builtin size instead of its current one.
+        pvfb->outputs[LORIE_OUTPUT_BUILTIN].x = 0;
+        pvfb->outputs[LORIE_OUTPUT_BUILTIN].y = 0;
+        pvfb->outputs[LORIE_OUTPUT_BUILTIN].width = mode->mode.width;
+        pvfb->outputs[LORIE_OUTPUT_BUILTIN].height = mode->mode.height;
+        pvfb->outputs[LORIE_OUTPUT_BUILTIN].connected = TRUE;
+
+        // If Virtual-1 is already enabled, builtin resizing alone must not shrink the desktop
+        // back down to just builtin's size - recompute the union the same way lorieRRCrtcSet
+        // does, instead of unconditionally handing builtin's own size to RRScreenSizeSet.
+        {
+            int maxWidth = 0, maxHeight = 0, i;
+            for (i = 0; i < pvfb->output_count; i++) {
+                if (!pvfb->outputs[i].connected)
+                    continue;
+                maxWidth = max(maxWidth, pvfb->outputs[i].x + pvfb->outputs[i].width);
+                maxHeight = max(maxHeight, pvfb->outputs[i].y + pvfb->outputs[i].height);
+            }
+            mmWidth = ((double) maxWidth) * 25.4 / monitorResolution;
+            mmHeight = ((double) maxHeight) * 25.4 / monitorResolution;
+            RRScreenSizeSet(pScreen, maxWidth, maxHeight, mmWidth, mmHeight);
+        }
 
         log(VERBOSE, "New reported framerate is %d", framerate);
         pvfb->root.framerate = framerate;
