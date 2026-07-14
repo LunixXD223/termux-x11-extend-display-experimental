@@ -3,12 +3,16 @@ package com.termux.x11;
 import android.app.Activity;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -55,6 +59,10 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     private volatile Surface decoderSurface;
     private volatile boolean running = false;
     private volatile Thread receiverThread;
+    // True only while actually streaming video (after the first CONFIG message, immersive
+    // fullscreen active) - distinct from 'running', which is also true during the brief
+    // "connected, waiting for stream" phase where the top bar is still shown normally.
+    private volatile boolean streaming = false;
 
     // Guards access to currentSocket, which disconnect() (running on the UI thread) closes to
     // unblock the receiver thread's blocking read - Thread.interrupt() does NOT interrupt a
@@ -98,6 +106,18 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     protected void onDestroy() {
         super.onDestroy();
         disconnect();
+    }
+
+    @Override
+    public void onBackPressed() {
+        // While actively streaming (immersive, panel hidden), BACK is the only way to get out -
+        // there is no visible Disconnect button in that state by design. Otherwise, fall back
+        // to the platform's normal back behavior (e.g. finishing the Activity).
+        if (streaming) {
+            disconnect();
+        } else {
+            super.onBackPressed();
+        }
     }
 
     @Override
@@ -166,20 +186,84 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     }
 
     private void showDisconnectedUi() {
+        streaming = false;
+        exitImmersiveMode();
         centerPanel.setVisibility(View.VISIBLE);
         topBar.setVisibility(View.GONE);
         statusTextCenter.setText(R.string.monitor_status_disconnected);
     }
 
     private void showConnectingUi() {
+        streaming = false;
+        exitImmersiveMode();
         centerPanel.setVisibility(View.VISIBLE);
         topBar.setVisibility(View.GONE);
         statusTextCenter.setText(R.string.monitor_status_connecting);
     }
 
     private void showConnectedUi() {
+        // Socket connected, but no video yet - still shows the top bar/Disconnect button
+        // normally. Immersive fullscreen only kicks in once actual streaming starts, in
+        // showStreamingUi() below.
+        streaming = false;
         centerPanel.setVisibility(View.GONE);
         topBar.setVisibility(View.VISIBLE);
+    }
+
+    // Called once the first (or any subsequent, e.g. after a resize) CONFIG message is
+    // processed and the decoder is actually up - the point where there's real video to show.
+    // Hides every control (panel, IP field, Connect/Disconnect button, status text) and enters
+    // true edge-to-edge immersive fullscreen, per the "only show the video" requirement. The
+    // only way out from here is BACK (see onBackPressed()) or the connection dropping on its
+    // own - there is deliberately no visible button in this state.
+    private void showStreamingUi() {
+        streaming = true;
+        centerPanel.setVisibility(View.GONE);
+        topBar.setVisibility(View.GONE);
+        enterImmersiveMode();
+    }
+
+    // Hides the status/navigation bars and makes the window draw edge-to-edge under them, using
+    // WindowInsetsController (API 30+, i.e. Android 11 - matches this feature's actual target
+    // range). Falls back to the older View.SYSTEM_UI_FLAG_* immersive-sticky flags on API < 30,
+    // since this app's minSdkVersion (26) is below that - deprecated but still functional, and
+    // keeps this feature from silently no-op'ing (regressing) on those older devices instead of
+    // just not using the newest API for it.
+    private void enterImmersiveMode() {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.systemBars());
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            //noinspection deprecation
+            window.getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+    }
+
+    // Restores the status/navigation bars and normal (non-edge-to-edge) window layout. Safe to
+    // call even if immersive mode was never entered.
+    private void exitImmersiveMode() {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(true);
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.show(WindowInsets.Type.systemBars());
+            }
+        } else {
+            //noinspection deprecation
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
     }
 
     private void setStatus(String text) {
@@ -247,6 +331,7 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                     decoder.configure(format, surface, null, 0);
                     decoder.start();
                     setStatus(getString(R.string.monitor_status_streaming, width, height));
+                    runOnUiThread(this::showStreamingUi);
                 } else if (kind == KIND_VIDEO && decoder != null) {
                     feedDecoder(decoder, payload);
                 }
