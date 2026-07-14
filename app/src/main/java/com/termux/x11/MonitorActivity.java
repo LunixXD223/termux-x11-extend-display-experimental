@@ -1,10 +1,11 @@
 package com.termux.x11;
 
 import android.app.Activity;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
+import android.media.MediaCodec;
+import android.media.MediaFormat;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -16,14 +17,12 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.zip.DataFormatException;
-import java.util.zip.Inflater;
+import java.nio.ByteBuffer;
 
 /**
  * Multi-monitor: "monitor mode" for a second device. Connects to a host device running
  * Termux:X11 (see lorie/netmonitor.c on the native side) and displays its Virtual-1 output -
- * received as raw RGBA8888 tiles over TCP - full-screen, by maintaining a persistent Bitmap of
- * the whole desktop and blitting incoming dirty tiles into it.
+ * received as an H.264/TCP stream - full-screen, via MediaCodec's Surface-output decode mode.
  *
  * This is a viewer only: it does not send input back to the host yet (touch/mouse/keyboard
  * routing back to the X server, with the correct coordinate offset, is a separate feature - see
@@ -32,16 +31,16 @@ import java.util.zip.Inflater;
  * Wire protocol - must match lorie/netmonitor.c exactly (see that file for the authoritative
  * description):
  *   Every message: [uint32 magic 0x4C4D4F4E "LMON"][uint32 length][uint8 kind][length bytes]
- *   kind 0 (CONFIG)     = payload is [uint32 width][uint32 height].
- *   kind 1 (DIRTY_RECT) = payload is [uint16 x][uint16 y][uint16 w][uint16 h]
- *                         [uint32 uncompressed length][zlib-compressed RGBA8888 tile pixels].
+ *   kind 0 (CONFIG) = payload is [uint32 width][uint32 height].
+ *   kind 1 (VIDEO)  = payload is one H.264 access unit's worth of encoder output bytes; feed to
+ *                     the decoder in order as received.
  */
 public class MonitorActivity extends Activity implements SurfaceHolder.Callback {
     private static final String TAG = "MonitorActivity";
     private static final int MONITOR_PORT = 7893;
     private static final int MAGIC = 0x4C4D4F4E;
     private static final int KIND_CONFIG = 0;
-    private static final int KIND_DIRTY_RECT = 1;
+    private static final int KIND_VIDEO = 1;
 
     private SurfaceView surfaceView;
     private View centerPanel;
@@ -53,20 +52,16 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     private TextView statusTextCenter;
     private TextView portText;
 
-    private volatile boolean surfaceReady = false;
+    private volatile Surface decoderSurface;
     private volatile boolean running = false;
     private volatile Thread receiverThread;
 
-    // Guards access to currentSocket, which Disconnect (running on the UI thread) closes to
+    // Guards access to currentSocket, which disconnect() (running on the UI thread) closes to
     // unblock the receiver thread's blocking read - Thread.interrupt() does NOT interrupt a
     // blocked java.net.Socket read, closing the socket from another thread is the standard way
     // to cancel one.
     private final Object socketLock = new Object();
     private Socket currentSocket;
-
-    // Only ever touched from the receiver thread (created/replaced on KIND_CONFIG, read/written
-    // in applyDirtyRect/drawFrame - both called from the same thread).
-    private Bitmap frameBitmap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,18 +102,18 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        surfaceReady = true;
+        decoderSurface = holder.getSurface();
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        // Nothing to do here - frameBitmap is (re)created lazily whenever a CONFIG message
-        // arrives, see runReceiver().
+        // Nothing to do here - the decoder is (re)configured against decoderSurface lazily,
+        // whenever a CONFIG message arrives - see runReceiver().
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        surfaceReady = false;
+        decoderSurface = null;
         disconnect();
     }
 
@@ -133,8 +128,8 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
 
     /**
      * Tears the connection down completely: closes the socket (unblocking the receiver thread's
-     * read), stops the receiver thread, releases the frame bitmap, and puts the UI back into
-     * the disconnected state. Safe to call multiple times / when nothing is connected.
+     * read), stops the receiver thread, releases the decoder, and puts the UI back into the
+     * disconnected state. Safe to call multiple times / when nothing is connected.
      */
     private void disconnect() {
         running = false;
@@ -153,10 +148,10 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         Thread t = receiverThread;
         receiverThread = null;
         if (t != null) {
-            // Reap the thread off to the side instead of joining here directly - disconnect()
-            // is often called from the UI thread (Disconnect button click), and blocking it on
-            // join() would risk a visible hitch/ANR. The join is just cleanup hygiene at this
-            // point (the socket close above already unblocked whatever read it was doing).
+            // Reap off to the side rather than joining here directly - disconnect() is often
+            // called from the UI thread (Disconnect button click), and blocking it on join()
+            // would risk a visible hitch/ANR. The socket close above already unblocked whatever
+            // read the thread was doing; this join is just cleanup hygiene.
             Thread reaper = t;
             new Thread(() -> {
                 try {
@@ -167,7 +162,6 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
             }, "monitor-receiver-reaper").start();
         }
 
-        frameBitmap = null;
         runOnUiThread(this::showDisconnectedUi);
     }
 
@@ -196,6 +190,8 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     }
 
     private void runReceiver(String host) {
+        MediaCodec decoder = null;
+
         try (Socket socket = new Socket()) {
             synchronized (socketLock) {
                 if (!running) {
@@ -209,7 +205,6 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
             runOnUiThread(this::showConnectedUi);
 
             DataInputStream in = new DataInputStream(socket.getInputStream());
-            Inflater inflater = new Inflater();
 
             while (running) {
                 int magic = in.readInt(); // DataInputStream reads big-endian, matching htonl() on the host
@@ -231,13 +226,29 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                     int width = readBE32(payload, 0);
                     int height = readBE32(payload, 4);
 
-                    if (frameBitmap != null)
-                        frameBitmap.recycle();
-                    frameBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                    if (decoder != null) {
+                        try {
+                            decoder.stop();
+                            decoder.release();
+                        } catch (Exception e) {
+                            Log.w(TAG, "Error stopping previous decoder before reconfigure", e);
+                        }
+                        decoder = null;
+                    }
+
+                    Surface surface = decoderSurface;
+                    if (surface == null) {
+                        Log.e(TAG, "No output surface yet, dropping connection");
+                        break;
+                    }
+
+                    MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
+                    decoder = MediaCodec.createDecoderByType("video/avc");
+                    decoder.configure(format, surface, null, 0);
+                    decoder.start();
                     setStatus(getString(R.string.monitor_status_streaming, width, height));
-                } else if (kind == KIND_DIRTY_RECT && frameBitmap != null) {
-                    if (applyDirtyRect(payload, inflater))
-                        drawFrame();
+                } else if (kind == KIND_VIDEO && decoder != null) {
+                    feedDecoder(decoder, payload);
                 }
             }
         } catch (IOException e) {
@@ -250,15 +261,23 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                 setStatus(getString(R.string.monitor_status_error, e.getMessage()));
             }
         } finally {
+            if (decoder != null) {
+                try {
+                    decoder.stop();
+                    decoder.release();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error releasing decoder", e);
+                }
+            }
             synchronized (socketLock) {
                 currentSocket = null;
             }
-            // Only reset to the disconnected UI if this thread is still the current one AND
-            // the connection wasn't already torn down via disconnect() (which already flips
-            // running to false itself). Without the identity check, a thread that just got
-            // superseded by a rapid reconnect could still be unwinding here *after* the new
-            // connection has already set running=true again, and would otherwise incorrectly
-            // flip the brand-new connection back to "disconnected".
+            // Only reset to the disconnected UI if this thread is still the current one AND the
+            // connection wasn't already torn down via disconnect() (which already flips running
+            // to false and updates the UI itself). Without the identity check, a thread that
+            // just got superseded by a rapid reconnect could still be unwinding here after the
+            // new connection already set running=true again, and would otherwise incorrectly
+            // flip the brand-new connection's UI back to "disconnected".
             if (running && Thread.currentThread() == receiverThread) {
                 running = false;
                 runOnUiThread(this::showDisconnectedUi);
@@ -270,70 +289,24 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         return ((b[off] & 0xFF) << 24) | ((b[off + 1] & 0xFF) << 16) | ((b[off + 2] & 0xFF) << 8) | (b[off + 3] & 0xFF);
     }
 
-    private static int readBE16(byte[] b, int off) {
-        return ((b[off] & 0xFF) << 8) | (b[off + 1] & 0xFF);
-    }
-
-    // Decompresses one dirty-rect payload and blits it into frameBitmap. Returns false (and
-    // skips the redraw) on any malformed/corrupt tile - a single bad tile should not crash the
-    // whole connection, just get dropped, same as a dropped video frame would be.
-    private boolean applyDirtyRect(byte[] payload, Inflater inflater) {
-        if (payload.length < 12)
-            return false;
-
-        int x = readBE16(payload, 0);
-        int y = readBE16(payload, 2);
-        int w = readBE16(payload, 4);
-        int h = readBE16(payload, 6);
-        int rawLen = readBE32(payload, 8);
-
-        if (w <= 0 || h <= 0 || rawLen != w * h * 4)
-            return false;
-
-        byte[] raw = new byte[rawLen];
-        inflater.reset();
-        inflater.setInput(payload, 12, payload.length - 12);
-        try {
-            int got = 0;
-            while (got < rawLen && !inflater.finished()) {
-                int n = inflater.inflate(raw, got, rawLen - got);
-                if (n == 0)
-                    break; // needsDictionary()/needsInput() case we can't satisfy - bail out
-                got += n;
+    private void feedDecoder(MediaCodec decoder, byte[] data) {
+        int inIdx = decoder.dequeueInputBuffer(10_000);
+        if (inIdx >= 0) {
+            ByteBuffer buf = decoder.getInputBuffer(inIdx);
+            if (buf != null) {
+                buf.clear();
+                buf.put(data);
+                decoder.queueInputBuffer(inIdx, 0, data.length, 0, 0);
             }
-            if (got != rawLen)
-                return false;
-        } catch (DataFormatException e) {
-            Log.w(TAG, "Bad compressed tile data, dropping this tile", e);
-            return false;
         }
+        // If no input buffer was free this round, this access unit is simply dropped - the
+        // stream is live, not a file, so skipping ahead is preferable to blocking the receiver
+        // thread (matches the latest-frame-wins philosophy used throughout this feature).
 
-        int[] pixels = new int[w * h];
-        for (int i = 0; i < w * h; i++) {
-            int off = i * 4;
-            int r = raw[off] & 0xFF, g = raw[off + 1] & 0xFF, b = raw[off + 2] & 0xFF, a = raw[off + 3] & 0xFF;
-            pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
-        }
-
-        frameBitmap.setPixels(pixels, 0, w, x, y, w, h);
-        return true;
-    }
-
-    // Redraws the whole persistent bitmap to the surface. Called once per received tile for
-    // now - correct but not maximally efficient (a busy host sending many tiles per frame means
-    // redundant redraws). Worth batching (e.g. only redraw when no more tiles are immediately
-    // available) in a later optimization pass.
-    private void drawFrame() {
-        if (!surfaceReady || frameBitmap == null)
-            return;
-
-        Canvas canvas = surfaceView.getHolder().lockCanvas();
-        if (canvas == null)
-            return;
-        try {
-            canvas.drawBitmap(frameBitmap, 0, 0, null);
-        } finally {
-            surfaceView.getHolder().unlockCanvasAndPost(canvas);
+        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+        int outIdx;
+        while ((outIdx = decoder.dequeueOutputBuffer(info, 0)) >= 0) {
+            decoder.releaseOutputBuffer(outIdx, true); // true = render straight to the Surface
         }
     }
 }
