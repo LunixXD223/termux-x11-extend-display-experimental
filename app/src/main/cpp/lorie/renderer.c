@@ -903,7 +903,46 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
     v1 = (float) (y + h) / (float) desc->height;
 
     LorieBuffer_bindTexture(buffer);
-    drawRegion(0, -1.f, -1.f, 1.f, 1.f, u0, v0, u1, v1, LorieBuffer_isRgba(buffer));
+    // BUGFIX: drawRegion() negates its y0/y1 arguments internally (-y0, -y1) - a convention
+    // calibrated for the on-screen draw path, where the window system's own presentation
+    // compositing flips the result again so it displays right-side-up. glReadPixels() on this
+    // offscreen FBO has no such compositor step: per the GL spec it always returns rows
+    // bottom-to-top of whatever was rasterized. With the same y0/y1 as the on-screen call, that
+    // meant row 0 of outRGBA ended up being the *bottom* of the captured region and the last row
+    // its *top* - i.e. captured upside-down, which decoded/displayed upside-down on the second
+    // device while that device's own native UI (drawn separately, not through this GL path)
+    // stayed right-side-up. Swapping y0/y1 here (instead of touching drawRegion() itself, which
+    // must stay correct for the on-screen path) flips only this destination quad, so what
+    // glReadPixels reads back is already correctly oriented - no extra CPU-side row-reversal
+    // copy needed.
+    drawRegion(0, -1.f, 1.f, 1.f, -1.f, u0, v0, u1, v1, LorieBuffer_isRgba(buffer));
+
+    // BUGFIX (root cause: cursor never composited into the capture at all): drawCursor() is
+    // only ever called from rendererRedrawLocked() (the on-screen path) - rendererCaptureRegion
+    // never drew the cursor overlay into its offscreen FBO, so it was simply absent from every
+    // frame sent to Virtual-1. This is not an X11/RandR/miPointer issue - pointer tracking,
+    // coordinate mapping and window management were already confirmed correct; the cursor
+    // texture (cursor.id) just never had a draw call issued against this target.
+    //
+    // Can't call drawCursor() directly: it computes its quad for drawRegion()'s on-screen (non-
+    // swapped) y0/y1 convention. This target uses the swapped convention (see the comment on
+    // the drawRegion() call above), so the cursor quad's y0/y1 must be swapped the same way, or
+    // the cursor itself would come out flipped/mispositioned even though the desktop content
+    // beneath it is now correctly oriented. Falling outside [x, x+w) x [y, y+h) in root
+    // coordinates naturally clips the quad out via normal GL clipping (NDC outside -1..1) -
+    // this is what prevents a ghost/duplicate cursor showing up in the Virtual-1 stream when
+    // the real pointer is actually over builtin instead.
+    if (state->cursor.width && state->cursor.height) {
+        float cx = 2.f * ((float) state->cursor.x - (float) x - (float) state->cursor.xhot) / (float) w - 1.f;
+        float cy = 2.f * ((float) state->cursor.y - (float) y - (float) state->cursor.yhot) / (float) h - 1.f;
+        float cw = 2.f * (float) state->cursor.width / (float) w;
+        float ch = 2.f * (float) state->cursor.height / (float) h;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        drawRegion(cursor.id, cx, cy + ch, cx + cw, cy, 0.f, 0.f, 1.f, 1.f, false);
+        glDisable(GL_BLEND);
+    }
+
     glFinish();
 
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, outRGBA); checkGlError();
