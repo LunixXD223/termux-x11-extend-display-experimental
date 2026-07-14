@@ -690,7 +690,15 @@ void rendererRedrawLocked(bool* waitingForBuffers) {
     glClear(GL_COLOR_BUFFER_BIT);
     glViewport(renderViewportX, surfaceH - renderViewportY - renderViewportH, renderViewportW, renderViewportH);
     float sourceLeft = 0.f, sourceTop = 0.f;
-    float sourceWidth = (float) desc->width, sourceHeight = (float) desc->height;
+    // BUGFIX (multi-monitor): this used to default to desc->width/height - the FULL shared
+    // root buffer (now 2880x720 with Virtual-1 attached), not this device's own region. In
+    // single-monitor mode desc->width/height always equaled expectedW/H, so this was
+    // completely invisible before - once Virtual-1 exists, the host started squishing the
+    // *entire* multi-monitor desktop (builtin + Virtual-1 side by side) into its own physical
+    // screen at normal (100%) zoom, which is exactly the "overlap/wrong position" symptom
+    // reported from live testing. The zoom>100 branch below already correctly used expectedW/H
+    // - only the non-zoom default was wrong.
+    float sourceWidth = (float) expectedW, sourceHeight = (float) expectedH;
     float logicalSourceWidth = (float) expectedW, logicalSourceHeight = (float) expectedH;
     if (zoomPercent > 100) {
         float requestedScale = (float) zoomPercent / 100.f;
