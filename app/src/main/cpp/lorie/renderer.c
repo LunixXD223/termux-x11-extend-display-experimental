@@ -933,13 +933,37 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
     // this is what prevents a ghost/duplicate cursor showing up in the Virtual-1 stream when
     // the real pointer is actually over builtin instead.
     if (state->cursor.width && state->cursor.height) {
+        // Cursor position/orientation transform for the capture path - re-derived from first
+        // principles (not just pattern-matched), since this exact spot was the subject of a
+        // reported bug (cursor position inverted on every axis, sprite sometimes upside down).
+        //
+        // drawRegion(id, x0,y0,x1,y1, u0,v0,u1,v1, flip) builds vertices as:
+        //   (x0,-y0,u0,v0) (x1,-y0,u1,v0) (x0,-y1,u0,v1) (x1,-y1,u1,v1)
+        // i.e. whatever y0 is passed as always pairs with v0, and y1 with v1 - fixed by
+        // drawRegion() itself, this function only ever controls what values it's *called* with.
+        //
+        // glReadPixels() always returns rows bottom-to-top of NDC space (GL spec: row 0 = the
+        // NDC y=-1 edge), but every downstream consumer of outRGBA (rgbaToI420, the client's
+        // Bitmap/MediaCodec Surface, etc.) treats row 0 as the *top* of the image. So: for the
+        // cursor sprite's own top row (v0, since drawCursor's on-screen call always passes
+        // v0=0.f meaning v=0 samples the sprite's top) to end up at outRGBA's row 0, it must be
+        // rasterized at NDC y=-1, i.e. drawRegion's "-y0" term must equal -1 at the sprite's top
+        // edge - the same requirement that was already established (and confirmed correct by
+        // testing) for the desktop-content drawRegion() call directly above this block.
+        //
+        // Solving for the y0/y1 that satisfy this, using cursor.y/x in ROOT coordinates and
+        // (x,y,w,h) as this capture's own Virtual-1 region (same as rendererCaptureRegion's
+        // parameters):
         float cx = 2.f * ((float) state->cursor.x - (float) x - (float) state->cursor.xhot) / (float) w - 1.f;
-        float cy = 1.f - 2.f * ((float) state->cursor.y - (float) y - (float) state->cursor.yhot) / (float) h;
+        float cyTop = 1.f - 2.f * ((float) state->cursor.y - (float) y - (float) state->cursor.yhot) / (float) h;
         float cw = 2.f * (float) state->cursor.width / (float) w;
         float ch = 2.f * (float) state->cursor.height / (float) h;
+        // cyTop is where the sprite's top edge (v=0) must land; the bottom edge (v=1) is ch
+        // further down (toward NDC y=+1, since -y1 must be *smaller* than -y0 for the sprite to
+        // extend downward from its top edge - i.e. y1 = cyTop - ch, not cyTop + ch).
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        drawRegion(cursor.id, cx, cy, cx + cw, cy + ch, 0.f, 1.f, 1.f, 0.f, false);
+        drawRegion(cursor.id, cx, cyTop, cx + cw, cyTop - ch, 0.f, 0.f, 1.f, 1.f, false);
         glDisable(GL_BLEND);
     }
 
