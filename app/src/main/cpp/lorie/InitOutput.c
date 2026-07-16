@@ -725,6 +725,38 @@ static Bool lorieCreateOutput(ScreenPtr pScreen, int idx, const char *name, size
     return TRUE;
 }
 
+// Rebuilds Virtual-1's advertised mode list: the small set of common presets, plus - once
+// known - the host's actual current resolution (e.g. 1600x720), so that
+// `xrandr --output Virtual-1 --mode <hostres>` works without the user ever having to run
+// `xrandr --newmode` / `--addmode` by hand. Pass width/height == 0 for the initial call from
+// lorieRandRInit, before the real host size has been reported by the Java side; it is called
+// again from lorieConfigureNotify every time that size becomes known or changes, keeping the
+// list current across rotations/resizes without needing a reboot or manual mode add.
+static Bool lorieUpdateVirtual1Modes(int width, int height, int framerate) {
+    static const struct { int w, h; } virtualModes[] = {
+        { 1280, 720 }, { 1920, 1080 },
+    };
+    RRModePtr modes[ARRAY_SIZE(virtualModes) + 1];
+    int i, count = 0;
+    Bool haveHostMode = FALSE;
+
+    for (i = 0; i < ARRAY_SIZE(virtualModes); i++) {
+        if (width && height && virtualModes[i].w == width && virtualModes[i].h == height)
+            haveHostMode = TRUE;
+        if (!(modes[count] = lorieCvt(virtualModes[i].w, virtualModes[i].h, framerate)))
+            return FALSE;
+        count++;
+    }
+
+    if (width && height && !haveHostMode) {
+        if (!(modes[count] = lorieCvt(width, height, framerate)))
+            return FALSE;
+        count++;
+    }
+
+    return RROutputSetModes(pvfb->outputs[LORIE_OUTPUT_VIRTUAL1].output, modes, count, 0);
+}
+
 static Bool lorieRandRInit(ScreenPtr pScreen) {
     rrScrPrivPtr pScrPriv;
     RRModePtr mode;
@@ -756,20 +788,10 @@ static Bool lorieRandRInit(ScreenPtr pScreen) {
 
     // Give Virtual-1 a small set of common modes up front so it already has something to
     // offer once it gets connected later - xrandr can list them even while disconnected.
-    {
-        static const struct { int w, h; } virtualModes[] = {
-            { 1280, 720 }, { 1920, 1080 },
-        };
-        RRModePtr modes[ARRAY_SIZE(virtualModes)];
-        int i;
-        for (i = 0; i < ARRAY_SIZE(virtualModes); i++) {
-            modes[i] = lorieCvt(virtualModes[i].w, virtualModes[i].h, pvfb->root.framerate);
-            if (!modes[i])
-                return FALSE;
-        }
-        if (!RROutputSetModes(pvfb->outputs[LORIE_OUTPUT_VIRTUAL1].output, modes, ARRAY_SIZE(virtualModes), 0))
-            return FALSE;
-    }
+    // The real host resolution isn't known yet at this point (it arrives later via
+    // lorieConfigureNotify), so it isn't included here.
+    if (!lorieUpdateVirtual1Modes(0, 0, pvfb->root.framerate))
+        return FALSE;
 
     return TRUE;
 }
@@ -887,6 +909,15 @@ void lorieConfigureNotify(int width, int height, int framerate, size_t name_size
         log(VERBOSE, "New reported framerate is %d", framerate);
         pvfb->root.framerate = framerate;
         pvfb->vblank_interval = 1000000 / pvfb->root.framerate;
+
+        // Keep Virtual-1 offering a mode that matches the host's actual resolution (e.g.
+        // 1600x720) automatically, so `xrandr --output Virtual-1 --mode <hostres>` works
+        // without the user having to add it by hand every boot. This only updates Virtual-1's
+        // advertised mode list; it does not touch its connection state, position or currently
+        // active CRTC mode, so it has no effect unless the user (or a later patch) actually
+        // switches Virtual-1 to this mode.
+        if (!lorieUpdateVirtual1Modes(width, height, framerate))
+            log(ERROR, "Failed to refresh Virtual-1 mode list for %dx%d", width, height);
     }
 }
 

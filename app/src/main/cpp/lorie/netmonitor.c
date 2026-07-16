@@ -205,7 +205,10 @@ static AMediaCodec *netMonitorCreateEncoder(int w, int h) {
     // scheduling priority where the device/codec supports these keys. Harmless no-ops on
     // codecs/OS versions that don't recognize them.
     AMediaFormat_setInt32(format, "low-latency", 1);
-    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_PRIORITY, 0 /* realtime */);
+    #if __ANDROID_API__ >= 28
+    AMediaFormat_setInt32(format, 
+        AMEDIAFORMAT_KEY_PRIORITY, 0 /* real-time */);
+#endif
 
     status = AMediaCodec_configure(codec, format, NULL, NULL, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
     AMediaFormat_delete(format);

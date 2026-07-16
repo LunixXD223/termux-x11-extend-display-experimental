@@ -934,16 +934,15 @@ bool rendererCaptureRegion(int x, int y, int w, int h, uint8_t *outRGBA) {
     // the real pointer is actually over builtin instead.
     if (state->cursor.width && state->cursor.height) {
         float cx = 2.f * ((float) state->cursor.x - (float) x - (float) state->cursor.xhot) / (float) w - 1.f;
-        float cy = 2.f * ((float) state->cursor.y - (float) y - (float) state->cursor.yhot) / (float) h - 1.f;
+        float cy = 1.f - 2.f * ((float) state->cursor.y - (float) y - (float) state->cursor.yhot) / (float) h;
         float cw = 2.f * (float) state->cursor.width / (float) w;
         float ch = 2.f * (float) state->cursor.height / (float) h;
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        drawRegion(cursor.id, cx, cy + ch, cx + cw, cy, 0.f, 0.f, 1.f, 1.f, false);
+        drawRegion(cursor.id, cx, cy, cx + cw, cy + ch, 0.f, 1.f, 1.f, 0.f, false);
         glDisable(GL_BLEND);
     }
 
-    glFinish();
 
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, outRGBA); checkGlError();
 
