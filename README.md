@@ -8,6 +8,9 @@ A [Termux](https://termux.com) X11 server add-on app.
 ## About
 Termux:X11 is a fully fledged X server. It is built with Android NDK and optimized to be used with Termux.
 
+## Added feature
+extend-display
+
 ## Submodules caveat
 This repo uses submodules. Use 
 
@@ -197,6 +200,18 @@ Use `termux-x11-preference "fullscreen"="false" "showAdditionalKbd"="true"` to d
 
 Termux:X11 activity should be available in background or foreground, otherwise `termux-x11-preference` tool will hang indefinitely.
 In the case if there is `Store preferences for secondary displays separately` preference active `termux-x11-preference` will use/modify preferences of display where Termux:X11 activity is currently opened.
+
+## Credits
+
+This project is based on the original Termux:X11 project.
+
+Some parts of this project were developed with the help of AI tools.
+
+Thanks to the original Termux:X11 developers.
+
+## Disclaimer
+
+This is an experimental fork and is not affiliated with the official Termux project.
 
 ## Using with 3rd party apps
 It is possible to use Termux:X11 with 3rd party apps.
