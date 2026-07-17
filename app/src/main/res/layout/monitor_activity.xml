@@ -10,6 +10,26 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Optional stats readout (resolution / fps / bitrate / decode latency), shown only while
+         streaming and only if the user enabled it on the connect screen. Placed in a corner so
+         it never competes with the video itself, matching the "video only" spirit of streaming
+         mode while still being available as an opt-in diagnostic overlay. -->
+    <TextView
+        android:id="@+id/monitor_stats_overlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="12dp"
+        android:background="#99000000"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:fontFamily="monospace"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
     <!-- Top status bar - visible only while connected/streaming. -->
     <LinearLayout
         android:id="@+id/monitor_top_bar"
@@ -95,5 +115,15 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:text="@string/monitor_connect_button_text" />
+
+        <CheckBox
+            android:id="@+id/monitor_overlay_toggle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_gravity="start"
+            android:textColor="#AAAAAA"
+            android:textSize="13sp"
+            android:text="@string/monitor_overlay_toggle_text" />
     </LinearLayout>
 </FrameLayout>

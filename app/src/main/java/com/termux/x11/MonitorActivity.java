@@ -1,11 +1,16 @@
 package com.termux.x11;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -14,7 +19,9 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import java.io.DataInputStream;
@@ -22,6 +29,8 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Multi-monitor: "monitor mode" for a second device. Connects to a host device running
@@ -55,6 +64,36 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     private TextView statusText;
     private TextView statusTextCenter;
     private TextView portText;
+    private TextView statsOverlay;
+    private CheckBox overlayToggle;
+
+    private volatile int lastVideoWidth, lastVideoHeight;
+    // Stats tracked for the optional overlay (item 7) - all client-side/local only, since the
+    // network protocol was intentionally left unchanged (see netmonitor.c): frames-decoded and
+    // bytes-received are counted here and read out once a second by statsTicker below; "decode
+    // latency" is the time between a video access unit being handed to the decoder and its
+    // matching output frame being rendered (matched via presentationTimeUs, which is a purely
+    // local MediaCodec bookkeeping field - never sent over the wire), NOT true glass-to-glass
+    // network latency, which isn't measurable without adding a timestamp to the wire protocol.
+    private final AtomicInteger framesDecoded = new AtomicInteger();
+    private final AtomicLong bytesReceived = new AtomicLong();
+    private volatile long lastDecodeLatencyUs;
+    private final Handler statsHandler = new Handler(Looper.getMainLooper());
+    private final Runnable statsTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (streaming && overlayToggle.isChecked()) {
+                int fps = framesDecoded.getAndSet(0);
+                long kbps = bytesReceived.getAndSet(0) * 8 / 1000;
+                statsOverlay.setText(getString(R.string.monitor_stats_overlay_text,
+                        lastVideoWidth, lastVideoHeight, fps, kbps, lastDecodeLatencyUs / 1000));
+                statsOverlay.setVisibility(View.VISIBLE);
+            } else {
+                statsOverlay.setVisibility(View.GONE);
+            }
+            statsHandler.postDelayed(this, 1000);
+        }
+    };
 
     private volatile Surface decoderSurface;
     private volatile boolean running = false;
@@ -85,8 +124,16 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         statusText = findViewById(R.id.monitor_status_text);
         statusTextCenter = findViewById(R.id.monitor_status_text_center);
         portText = findViewById(R.id.monitor_port_text);
+        statsOverlay = findViewById(R.id.monitor_stats_overlay);
+        overlayToggle = findViewById(R.id.monitor_overlay_toggle);
 
         portText.setText(getString(R.string.monitor_port_label, MONITOR_PORT));
+
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        overlayToggle.setChecked(prefs.getBoolean("show_stats_overlay", false));
+        overlayToggle.setOnCheckedChangeListener((buttonView, isChecked) ->
+                prefs.edit().putBoolean("show_stats_overlay", isChecked).apply());
+        statsHandler.post(statsTicker);
 
         surfaceView.getHolder().addCallback(this);
         connectButton.setOnClickListener(v -> {
@@ -105,6 +152,7 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        statsHandler.removeCallbacks(statsTicker);
         disconnect();
     }
 
@@ -183,6 +231,37 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         }
 
         runOnUiThread(this::showDisconnectedUi);
+    }
+
+    // Resizes and re-centers the SurfaceView so the video is displayed at its own native aspect
+    // ratio, never stretched to fill the screen - the SurfaceView's layout XML default is
+    // match_parent x match_parent (fills whatever shape the physical screen is, 16:9 up through
+    // 21:9 and tablets), which previously meant MediaCodec's Surface-output scaling stretched
+    // every frame to fit that shape regardless of the actual video resolution's own ratio.
+    //
+    // scale = min(displayWidth / videoWidth, displayHeight / videoHeight) is the largest scale
+    // factor that still lets the *whole* video fit inside the available screen space without
+    // cropping either dimension - taking the min() (rather than max(), which would crop) is
+    // exactly what guarantees no stretch and no cropping, only unused space on one axis
+    // (letterboxed top/bottom for a wider-than-screen video, pillarboxed left/right for a
+    // narrower one) - filled by the parent FrameLayout's own black background.
+    private void applyAspectRatio(int videoWidth, int videoHeight) {
+        if (videoWidth <= 0 || videoHeight <= 0)
+            return;
+
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int displayWidth = metrics.widthPixels;
+        int displayHeight = metrics.heightPixels;
+        if (displayWidth <= 0 || displayHeight <= 0)
+            return;
+
+        float scale = Math.min((float) displayWidth / videoWidth, (float) displayHeight / videoHeight);
+        int surfaceWidth = Math.round(videoWidth * scale);
+        int surfaceHeight = Math.round(videoHeight * scale);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(surfaceWidth, surfaceHeight);
+        params.gravity = Gravity.CENTER;
+        surfaceView.setLayoutParams(params);
     }
 
     private void showDisconnectedUi() {
@@ -309,6 +388,8 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                     }
                     int width = readBE32(payload, 0);
                     int height = readBE32(payload, 4);
+                    lastVideoWidth = width;
+                    lastVideoHeight = height;
 
                     if (decoder != null) {
                         try {
@@ -331,8 +412,12 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
                     decoder.configure(format, surface, null, 0);
                     decoder.start();
                     setStatus(getString(R.string.monitor_status_streaming, width, height));
-                    runOnUiThread(this::showStreamingUi);
+                    runOnUiThread(() -> {
+                        applyAspectRatio(width, height);
+                        showStreamingUi();
+                    });
                 } else if (kind == KIND_VIDEO && decoder != null) {
+                    bytesReceived.addAndGet(payload.length);
                     feedDecoder(decoder, payload);
                 }
             }
@@ -374,6 +459,11 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         return ((b[off] & 0xFF) << 24) | ((b[off + 1] & 0xFF) << 16) | ((b[off + 2] & 0xFF) << 8) | (b[off + 3] & 0xFF);
     }
 
+    // Reused across every feedDecoder() call instead of allocating a new BufferInfo per video
+    // frame - MediaCodec only ever writes into it as an output parameter, so there's no
+    // correctness reason to allocate a fresh one each time.
+    private final MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+
     private void feedDecoder(MediaCodec decoder, byte[] data) {
         int inIdx = decoder.dequeueInputBuffer(10_000);
         if (inIdx >= 0) {
@@ -381,17 +471,27 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
             if (buf != null) {
                 buf.clear();
                 buf.put(data);
-                decoder.queueInputBuffer(inIdx, 0, data.length, 0, 0);
+                // presentationTimeUs is purely local MediaCodec bookkeeping - it is never sent
+                // over the wire (the wire protocol/netmonitor.c is unchanged). Using the current
+                // wall-clock time here lets us measure this decoder's own submit-to-render
+                // latency by comparing it against the matching output buffer's
+                // info.presentationTimeUs below - NOT true host-to-client network latency, which
+                // would need a timestamp added to the wire format.
+                long nowUs = System.nanoTime() / 1000;
+                decoder.queueInputBuffer(inIdx, 0, data.length, nowUs, 0);
             }
         }
         // If no input buffer was free this round, this access unit is simply dropped - the
         // stream is live, not a file, so skipping ahead is preferable to blocking the receiver
         // thread (matches the latest-frame-wins philosophy used throughout this feature).
 
-        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
         int outIdx;
-        while ((outIdx = decoder.dequeueOutputBuffer(info, 0)) >= 0) {
+        while ((outIdx = decoder.dequeueOutputBuffer(bufferInfo, 0)) >= 0) {
             decoder.releaseOutputBuffer(outIdx, true); // true = render straight to the Surface
+            framesDecoded.incrementAndGet();
+            long nowUs = System.nanoTime() / 1000;
+            if (bufferInfo.presentationTimeUs > 0)
+                lastDecodeLatencyUs = nowUs - bufferInfo.presentationTimeUs;
         }
     }
 }

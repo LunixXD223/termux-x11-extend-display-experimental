@@ -22,6 +22,8 @@
     <string name="monitor_status_streaming">Streaming %1$d×%2$d</string>
     <string name="monitor_status_disconnected">Disconnected</string>
     <string name="monitor_status_error">Connection error: %1$s</string>
+    <string name="monitor_overlay_toggle_text">Show stats overlay while streaming</string>
+    <string name="monitor_stats_overlay_text">%1$d×%2$d  %3$d fps  %4$d kbps  %5$d ms decode</string>
     <string name="extra_keys_config_desc">Here you can set value of extra-keys variable like in Termux app (read <a href="http://wiki.termux.com/wiki/Touch_Keyboard#Extra_Keys_Row">this</a>) and more \n
 E.g. <b>META</b> for <i>META key</i>, \n
 <b>KEYBOARD</b> for <i>soft keyboard toggling key</i>, \n
