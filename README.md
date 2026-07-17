@@ -11,6 +11,23 @@ Termux:X11 is a fully fledged X server. It is built with Android NDK and optimiz
 ## Added feature
 extend-display
 
+## how to use it?
+just start Xfce or something and activate virtual-1 first
+
+
+example:
+```
+xrandr --output Virtual-1 --mode 1280x720 --right-of builtin
+```
+
+On the second phone, simply press become extra monitor in the termux-x11 application and enter the IP of the phone running the x11 server.
+
+example:
+```
+192.168.X.X
+```
+you can check your private ip in settings-->about phone-->status
+
 ## Submodules caveat
 This repo uses submodules. Use 
 
