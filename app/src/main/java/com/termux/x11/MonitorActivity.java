@@ -2,13 +2,14 @@ package com.termux.x11;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Point;
+import android.graphics.Rect;
 import android.media.MediaCodec;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.Surface;
@@ -18,6 +19,8 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import android.view.WindowMetrics;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -114,6 +117,15 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.monitor_activity);
+
+        // Let content draw into the display cutout area (notch/punch-hole) instead of the
+        // system reserving a permanent black bar for it - LAYOUT_IN_DISPLAY_CUTOUT_MODE was
+        // added in API 28; a no-op (guarded) on the API 26-27 floor below that.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attrs = getWindow().getAttributes();
+            attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(attrs);
+        }
 
         surfaceView = findViewById(R.id.monitor_surface);
         centerPanel = findViewById(R.id.monitor_center_panel);
@@ -245,13 +257,20 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
     // exactly what guarantees no stretch and no cropping, only unused space on one axis
     // (letterboxed top/bottom for a wider-than-screen video, pillarboxed left/right for a
     // narrower one) - filled by the parent FrameLayout's own black background.
+    //
+    // Uses the true physical panel size (getPhysicalDisplaySize()), not
+    // getResources().getDisplayMetrics() - the latter reflects the *current window's* size,
+    // which can be smaller than the real panel resolution depending on system bar/cutout
+    // accounting, producing a spurious scale slightly under 1.0 and a thin unwanted black
+    // border even on a device whose native mode already exactly matches the video (e.g. a host
+    // mode of 1600x720 on a panel that IS 1600x720).
     private void applyAspectRatio(int videoWidth, int videoHeight) {
         if (videoWidth <= 0 || videoHeight <= 0)
             return;
 
-        DisplayMetrics metrics = getResources().getDisplayMetrics();
-        int displayWidth = metrics.widthPixels;
-        int displayHeight = metrics.heightPixels;
+        Point displaySize = getPhysicalDisplaySize();
+        int displayWidth = displaySize.x;
+        int displayHeight = displaySize.y;
         if (displayWidth <= 0 || displayHeight <= 0)
             return;
 
@@ -262,6 +281,27 @@ public class MonitorActivity extends Activity implements SurfaceHolder.Callback 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(surfaceWidth, surfaceHeight);
         params.gravity = Gravity.CENTER;
         surfaceView.setLayoutParams(params);
+    }
+
+    // True physical panel resolution, independent of the current window/inset state - this is
+    // what "renderer must use the physical display size, not window size" means concretely.
+    // getMaximumWindowMetrics() (API 30+) reports the largest bounds available to the app on
+    // this display, i.e. the real panel size, regardless of whether system bars/cutout insets
+    // are currently being applied - deliberately NOT getCurrentWindowMetrics(), which can still
+    // reflect a smaller area if this is queried before immersive mode has fully taken effect.
+    // Display.getRealSize() (deprecated but functional) is the equivalent for the API 26-29
+    // floor below where WindowMetrics exists.
+    private Point getPhysicalDisplaySize() {
+        Point size = new Point();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowMetrics metrics = getWindowManager().getMaximumWindowMetrics();
+            Rect bounds = metrics.getBounds();
+            size.set(bounds.width(), bounds.height());
+        } else {
+            //noinspection deprecation
+            getWindowManager().getDefaultDisplay().getRealSize(size);
+        }
+        return size;
     }
 
     private void showDisconnectedUi() {
