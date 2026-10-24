@@ -224,8 +224,14 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         @Override
         public void onResume() {
             super.onResume();
-            //noinspection DataFlowIssue
-            ((LoriePreferences) getActivity()).getSupportActionBar().setTitle(getPreferenceScreen().getTitle());
+            LoriePreferences activity = (LoriePreferences) getActivity();
+            PreferenceScreen screen = getPreferenceScreen();
+            if (activity == null || screen == null)
+                return;
+
+            ActionBar actionBar = activity.getSupportActionBar();
+            if (actionBar != null)
+                actionBar.setTitle(screen.getTitle());
         }
 
         /** @noinspection SameParameterValue*/
@@ -330,7 +336,7 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
 
         @SuppressWarnings("ConstantConditions")
         void updatePreferencesLayout() {
-            if (getContext() == null)
+            if (!isAdded() || getContext() == null || getPreferenceScreen() == null || prefs == null)
                 return;
 
             for (String key : prefs.keys.keySet()) {
