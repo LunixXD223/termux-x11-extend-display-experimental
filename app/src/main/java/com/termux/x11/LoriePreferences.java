@@ -81,6 +81,7 @@ import java.util.regex.PatternSyntaxException;
 public class LoriePreferences extends AppCompatActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
     static final String ACTION_PREFERENCES_CHANGED = "com.termux.x11.ACTION_PREFERENCES_CHANGED";
     private static Prefs prefs = null;
+    private boolean receiverRegistered;
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -146,12 +147,16 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         super.onResume();
         IntentFilter filter = new IntentFilter(ACTION_PREFERENCES_CHANGED);
         registerReceiver(receiver, filter, SDK_INT >= Build.VERSION_CODES.TIRAMISU ? RECEIVER_NOT_EXPORTED : 0);
+        receiverRegistered = true;
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        unregisterReceiver(receiver);
+        if (receiverRegistered) {
+            unregisterReceiver(receiver);
+            receiverRegistered = false;
+        }
     }
 
     @Override
@@ -241,8 +246,12 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
             getPreferenceManager().setPreferenceDataStore(prefs);
 
-            if ((Integer.parseInt(prefs.touchMode.get()) - 1) > 2)
+            try {
+                if ((Integer.parseInt(prefs.touchMode.get()) - 1) > 2)
+                    prefs.touchMode.put("1");
+            } catch (NumberFormatException ignored) {
                 prefs.touchMode.put("1");
+            }
 
             setPreferencesFromResource(R.xml.preferences, root == null ? "main" : root);
 
@@ -418,7 +427,9 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             if ("displayResolutionCustom".contentEquals(key)) {
                 String value = (String) newValue;
                 try {
-                    String[] resolution = value.split("x");
+                    String[] resolution = value.trim().toLowerCase().split("x", -1);
+                    if (resolution.length != 2)
+                        throw new NumberFormatException();
                     int width = Integer.parseInt(resolution[0]);
                     int height = Integer.parseInt(resolution[1]);
                     if (width <= 0 || height <= 0)

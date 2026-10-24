@@ -29,6 +29,7 @@
         <item name="android:windowNoTitle">false</item>
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
+        <item name="materialButtonStyle">@style/Widget.Material3.Button</item>
     </style>
     <style name="Preference.Category.Material">
         <item name="android:layout">@layout/preference_category_material</item>

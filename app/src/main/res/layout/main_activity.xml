@@ -70,36 +70,51 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="28dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:text="@string/preferences_button_text"
                 app:icon="@drawable/ic_md_settings"
-                app:iconTint="?attr/colorOnPrimary" />
+                app:iconTint="?attr/colorOnPrimary"
+                app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/help_button"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:text="@string/help_button_text"
                 app:icon="@drawable/ic_md_help"
-                app:iconTint="?attr/colorOnSecondaryContainer" />
+                app:iconTint="?attr/colorOnSecondaryContainer"
+                app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/monitor_button"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:text="@string/monitor_button_text"
                 app:icon="@drawable/ic_md_monitor"
-                app:iconTint="?attr/colorOnSecondaryContainer" />
+                app:iconTint="?attr/colorOnSecondaryContainer"
+                app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/exit_button"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:text="@string/exit_button_text"
                 app:icon="@drawable/ic_md_power"
-                app:iconTint="?attr/colorPrimary" />
+                app:iconTint="?attr/colorPrimary"
+                app:cornerRadius="14dp" />
         </LinearLayout>
 
 

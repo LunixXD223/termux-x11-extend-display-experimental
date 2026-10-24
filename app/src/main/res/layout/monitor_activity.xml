@@ -63,7 +63,8 @@
             android:layout_height="wrap_content"
             android:text="@string/monitor_disconnect_button_text"
             app:icon="@drawable/ic_md_power"
-            app:iconTint="?attr/colorOnSecondaryContainer" />
+            app:iconTint="?attr/colorOnSecondaryContainer"
+            app:cornerRadius="14dp" />
     </LinearLayout>
 
     <!-- Center panel - host/port entry, visible only while disconnected. -->
@@ -81,7 +82,10 @@
             android:layout_height="match_parent"
             android:gravity="center"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:paddingStart="32dp"
+            android:paddingTop="32dp"
+            android:paddingEnd="32dp"
+            android:paddingBottom="32dp">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="72dp"
@@ -149,7 +153,8 @@
                 android:layout_marginTop="20dp"
                 android:text="@string/monitor_connect_button_text"
                 app:icon="@drawable/ic_md_monitor"
-                app:iconTint="?attr/colorOnPrimary" />
+                app:iconTint="?attr/colorOnPrimary"
+                app:cornerRadius="14dp" />
 
             <com.google.android.material.checkbox.MaterialCheckBox
                 android:id="@+id/monitor_overlay_toggle"
