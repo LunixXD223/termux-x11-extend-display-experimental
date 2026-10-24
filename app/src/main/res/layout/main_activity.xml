@@ -29,77 +29,77 @@
             android:id="@+id/stub"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@android:color/black"
+            android:background="?attr/colorSurface"
             android:gravity="center_horizontal|center_vertical"
             android:orientation="vertical"
+            android:padding="24dp"
             android:visibility="visible">
 
-            <ImageView
-                android:id="@+id/x11_image"
-                android:layout_width="130dp"
-                android:layout_height="130dp"
-                android:scaleType="fitCenter"
-                app:srcCompat="@drawable/ic_x11_icon"
-                android:contentDescription="X Logo"
-                tools:ignore="HardcodedText" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="144dp"
+                android:layout_height="144dp"
+                app:cardBackgroundColor="?attr/colorPrimaryContainer"
+                app:cardCornerRadius="40dp"
+                app:cardElevation="0dp">
 
-            <Space
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="20dp" />
+                <ImageView
+                    android:id="@+id/x11_image"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="22dp"
+                    android:scaleType="fitCenter"
+                    android:tint="?attr/colorOnPrimaryContainer"
+                    app:srcCompat="@drawable/ic_x11_icon"
+                    android:contentDescription="X Logo"
+                    tools:ignore="HardcodedText" />
+            </com.google.android.material.card.MaterialCardView>
 
             <TextView
                 android:id="@+id/textView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
                 android:gravity="center_horizontal|center_vertical"
                 android:text="@string/not_connected"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp" />
+                android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                android:textColor="?attr/colorOnSurface" />
 
-            <Space
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="40dp" />
-
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/preferences_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/preferences_button_text" />
-
-            <Space
+                style="@style/Widget.Material3.Button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="10dp" />
+                android:layout_marginTop="28dp"
+                android:text="@string/preferences_button_text"
+                app:icon="@drawable/ic_md_settings"
+                app:iconTint="?attr/colorOnPrimary" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/help_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/help_button_text" />
-
-            <Space
+                style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="10dp" />
+                android:text="@string/help_button_text"
+                app:icon="@drawable/ic_md_help"
+                app:iconTint="?attr/colorOnSecondaryContainer" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/monitor_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/monitor_button_text" />
-
-            <Space
+                style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="10dp" />
+                android:text="@string/monitor_button_text"
+                app:icon="@drawable/ic_md_monitor"
+                app:iconTint="?attr/colorOnSecondaryContainer" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/exit_button"
-                android:layout_width="wrap_content"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/exit_button_text" />
+                android:text="@string/exit_button_text"
+                app:icon="@drawable/ic_md_power"
+                app:iconTint="?attr/colorPrimary" />
         </LinearLayout>
 
 
