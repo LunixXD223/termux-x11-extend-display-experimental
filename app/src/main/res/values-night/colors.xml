@@ -1,0 +1,26 @@
+<resources>
+    <color name="colorPrimary">#AAC7FF</color>
+    <color name="colorOnPrimary">#0A305F</color>
+    <color name="colorPrimaryContainer">#284777</color>
+    <color name="colorOnPrimaryContainer">#D6E3FF</color>
+    <color name="colorSecondary">#BEC6DC</color>
+    <color name="colorOnSecondary">#283041</color>
+    <color name="colorSecondaryContainer">#3E4759</color>
+    <color name="colorOnSecondaryContainer">#DAE2F9</color>
+    <color name="colorTertiary">#DEBCDF</color>
+    <color name="colorOnTertiary">#402843</color>
+    <color name="colorTertiaryContainer">#573E5C</color>
+    <color name="colorOnTertiaryContainer">#FBD7FC</color>
+    <color name="colorError">#FFB4AB</color>
+    <color name="colorOnError">#690005</color>
+    <color name="colorErrorContainer">#93000A</color>
+    <color name="colorOnErrorContainer">#FFDAD6</color>
+    <color name="colorBackground">#111318</color>
+    <color name="colorOnBackground">#E1E2E9</color>
+    <color name="colorSurface">#111318</color>
+    <color name="colorOnSurface">#E1E2E9</color>
+    <color name="colorSurfaceVariant">#44474F</color>
+    <color name="colorOnSurfaceVariant">#C4C6D0</color>
+    <color name="colorOutline">#8E9099</color>
+    <color name="colorOutlineVariant">#44474F</color>
+</resources>

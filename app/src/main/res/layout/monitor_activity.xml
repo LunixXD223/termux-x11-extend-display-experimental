@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
@@ -20,7 +21,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
         android:layout_margin="12dp"
-        android:background="#99000000"
+        android:background="@drawable/bg_monitor_stats"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:paddingTop="4dp"
@@ -36,9 +37,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
+        android:layout_margin="12dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#99000000"
+        android:background="@drawable/bg_monitor_pill"
         android:paddingStart="20dp"
         android:paddingEnd="12dp"
         android:paddingTop="14dp"
@@ -54,76 +56,113 @@
             android:textSize="15sp"
             android:text="@string/monitor_status_enter_host" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/monitor_disconnect_button"
-            style="?android:attr/buttonStyleSmall"
+            style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/monitor_disconnect_button_text" />
+            android:text="@string/monitor_disconnect_button_text"
+            app:icon="@drawable/ic_md_power"
+            app:iconTint="?attr/colorOnSecondaryContainer"
+            app:cornerRadius="14dp" />
     </LinearLayout>
 
     <!-- Center panel - host/port entry, visible only while disconnected. -->
-    <LinearLayout
+    <ScrollView
         android:id="@+id/monitor_center_panel"
-        android:layout_width="300dp"
-        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_gravity="center"
-        android:orientation="vertical"
-        android:gravity="center_horizontal"
-        android:padding="24dp">
+        android:background="?attr/colorSurface"
+        android:fillViewport="true"
+        android:visibility="visible">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/monitor_title"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/monitor_status_text_center"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="#AAAAAA"
-            android:textSize="14sp"
-            android:text="@string/monitor_status_enter_host" />
-
-        <EditText
-            android:id="@+id/monitor_host_input"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:inputType="textUri"
-            android:singleLine="true"
-            android:hint="@string/monitor_host_hint"
-            android:textColor="#FFFFFF"
-            android:textColorHint="#777777"
-            android:gravity="center" />
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingStart="32dp"
+            android:paddingTop="32dp"
+            android:paddingEnd="32dp"
+            android:paddingBottom="32dp">
 
-        <TextView
-            android:id="@+id/monitor_port_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textColor="#666666"
-            android:textSize="12sp" />
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                app:cardBackgroundColor="?attr/colorSecondaryContainer"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp">
 
-        <Button
-            android:id="@+id/monitor_connect_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/monitor_connect_button_text" />
+                <ImageView
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:padding="18dp"
+                    android:src="@drawable/ic_md_monitor"
+                    android:tint="?attr/colorOnSecondaryContainer"
+                    android:contentDescription="@string/monitor_title" />
+            </com.google.android.material.card.MaterialCardView>
 
-        <CheckBox
-            android:id="@+id/monitor_overlay_toggle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_gravity="start"
-            android:textColor="#AAAAAA"
-            android:textSize="13sp"
-            android:text="@string/monitor_overlay_toggle_text" />
-    </LinearLayout>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/monitor_title"
+                android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/monitor_status_text_center"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/monitor_status_enter_host"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:hint="@string/monitor_host_hint"
+                app:boxStrokeColor="?attr/colorPrimary"
+                app:boxBackgroundMode="outline">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/monitor_host_input"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textUri"
+                    android:singleLine="true" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/monitor_port_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/monitor_connect_button"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="@string/monitor_connect_button_text"
+                app:icon="@drawable/ic_md_monitor"
+                app:iconTint="?attr/colorOnPrimary"
+                app:cornerRadius="14dp" />
+
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/monitor_overlay_toggle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/monitor_overlay_toggle_text"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+    </ScrollView>
 </FrameLayout>

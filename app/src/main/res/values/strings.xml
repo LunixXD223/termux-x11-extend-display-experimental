@@ -7,10 +7,10 @@
     <string name="app_name">&TERMUX_X11_APP_NAME;</string>
 
     <string name="not_connected">Not connected</string>
-    <string name="preferences_button_text">   PREFERENCES   </string>
-    <string name="help_button_text">   HELP   </string>
-    <string name="exit_button_text">   EXIT   </string>
-    <string name="monitor_button_text">   BECOME EXTRA MONITOR   </string>
+    <string name="preferences_button_text">Preferences</string>
+    <string name="help_button_text">Help</string>
+    <string name="exit_button_text">Exit</string>
+    <string name="monitor_button_text">Become extra monitor</string>
     <string name="monitor_title">Extra Monitor</string>
     <string name="monitor_host_hint">Host IP address</string>
     <string name="monitor_port_label">Port %1$d</string>
